@@ -16,19 +16,40 @@
 
 package org.gradle.internal;
 
+import com.google.common.collect.Lists;
 import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang.StringUtils;
 import org.gradle.api.GradleException;
 import org.gradle.api.UncheckedIOException;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 
 public class FileUtils {
     public static final int WINDOWS_PATH_LIMIT = 260;
+
+    private static final Comparator<File> FILE_SEGMENT_COMPARATOR = new Comparator<File>() {
+        @Override
+        public int compare(File left, File right) {
+            String[] leftSegments = StringUtils.split(left.getPath(), File.separator);
+            String[] rightSegments = StringUtils.split(right.getPath(), File.separator);
+
+            int limit = Math.min(leftSegments.length, rightSegments.length);
+            for (int i = 0; i < limit; i++) {
+                int segmentComparison = leftSegments[i].compareTo(rightSegments[i]);
+                if (segmentComparison != 0) {
+                    return segmentComparison;
+                }
+            }
+
+            return leftSegments.length - rightSegments.length;
+        }
+    };
 
     /**
      * Converts a string into a string that is safe to use as a file name. The result will only include ascii characters and numbers, and the "-","_", #, $ and "." characters.
@@ -72,29 +93,17 @@ public class FileUtils {
      * @return the encompassing roots
      */
     public static Collection<? extends File> calculateRoots(Iterable<? extends File> files) {
-        List<File> roots = new LinkedList<File>();
-
-        files:
-        for (File file : files) {
-            File absoluteFile = file.getAbsoluteFile();
-            String path = file.getPath();
-            Iterator<File> rootsIterator = roots.iterator();
-
-            while (rootsIterator.hasNext()) {
-                File root = rootsIterator.next();
-                String rootPath = root.getPath();
-                if (doesPathStartWith(path, rootPath)) { // is lower than root
-                    continue files;
-                }
-
-                if (doesPathStartWith(rootPath, path)) { // is higher than root
-                    rootsIterator.remove();
-                }
+        List<File> roots = Lists.newArrayList(files);
+        Collections.sort(roots, FILE_SEGMENT_COMPARATOR);
+        File root = null;
+        for (Iterator<File> iterator = roots.iterator(); iterator.hasNext();) {
+            File next = iterator.next();
+            if (root != null && doesPathStartWith(next.getPath(), root.getPath())) {
+                iterator.remove();
+            } else {
+                root = next;
             }
-
-            roots.add(absoluteFile);
         }
-
         return roots;
     }
 
